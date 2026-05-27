@@ -430,8 +430,11 @@ class ZendureManager(DataUpdateCoordinator[None], EntityDevice):
                 d.pwr_produced = min(0, d.batteryOutput.asInt + d.homeInput.asInt - d.batteryInput.asInt - d.homeOutput.asInt)
                 self.produced -= d.pwr_produced
 
-                # only positive pwr_offgrid must be taken into account, negative values count a solarInput
-                if (home := -d.homeInput.asInt + max(0, d.pwr_offgrid)) < 0:
+                home = d.homeOutput.asInt - d.homeInput.asInt
+                # Prioritize solar to home first: only charge battery with excess solar
+                excess_solar = d.solarInput.asInt - d.homeOutput.asInt
+                # Only charge if there's excess solar OR no solar but grid input available
+                if excess_solar >= SmartMode.POWER_START or (d.solarInput.asInt == 0 and d.homeInput.asInt > 0):
                     self.charge.append(d)
                     self.charge_limit += d.fuseGrp.charge_limit(d)
                     self.charge_optimal += d.charge_optimal
