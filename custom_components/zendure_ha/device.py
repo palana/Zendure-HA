@@ -5,6 +5,7 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
+import re
 import traceback
 from dataclasses import dataclass
 from datetime import datetime, timedelta
@@ -19,16 +20,23 @@ try:
 except ImportError:
     establish_connection = None
 
+try:
+    from getmac import get_mac_address
+except ImportError:
+    get_mac_address = None
+
 from homeassistant.components import bluetooth, persistent_notification
 from homeassistant.components.number import NumberMode
 from homeassistant.core import HomeAssistant
+from homeassistant.exceptions import HomeAssistantError
+from homeassistant.helpers import device_registry as dr
 from homeassistant.helpers.aiohttp_client import async_get_clientsession
 from homeassistant.util import dt as dt_util
 from paho.mqtt import client as mqtt_client
 
 from .binary_sensor import ZendureBinarySensor
 from .button import ZendureButton
-from .const import DeviceState, SmartMode
+from .const import DOMAIN, DeviceState, SmartMode
 from .entity import EntityDevice, EntityZendure
 from .number import ZendureNumber, ZendureRestoreNumber
 from .select import ZendureRestoreSelect, ZendureSelect
@@ -40,6 +48,25 @@ _LOGGER = logging.getLogger(__name__)
 CONST_HEADER = {"content-type": "application/json; charset=UTF-8"}
 CONST_TIMEOUT = ClientTimeout(total=4)
 SF_COMMAND_CHAR = "0000c304-0000-1000-8000-00805f9b34fb"
+CONST_MACADDRESS = re.compile(r"^(?:[0-9a-f]{2}:){5}[0-9a-f]{2}$")
+
+
+def macLookup(host: str) -> str | None:
+    """Get the MAC address of a host on the local network.
+
+    The devices do not report their own MAC anywhere (neither the cloud device list nor
+    the zenSDK properties/report carry one), so it is looked up by address instead. getmac
+    arpings the host (or sends it a UDP packet) to fill the ARP table first, so this also
+    works on a cold start, and it accepts both the IP and the mDNS name of a device.
+    Blocking: call from an executor.
+    """
+    if get_mac_address is None:
+        return None
+    try:
+        return get_mac_address(hostname=host, network_request=True)
+    except Exception as err:  # getmac normally reports failures as None
+        _LOGGER.debug("No MAC address for %s: %s", host, err)
+    return None
 
 
 class ZendureBattery(EntityDevice):
@@ -125,6 +152,8 @@ class ZendureDevice(EntityDevice):
         self.topic_function = f"iot/{self.prodkey}/{self.deviceId}/function/invoke"
 
         self.batteries: dict[str, ZendureBattery | None] = {}
+        self.macRegistered = False
+        self.macReported = False
         self.lastseen = datetime.min
         self._messageid = 0
         self.kWh = 0.0
@@ -452,6 +481,83 @@ class ZendureDevice(EntityDevice):
                 if connection_type == "bluetooth":
                     return mac_address
         return None
+
+    @property
+    def netMac(self) -> str | None:
+        """The WiFi/Ethernet MAC address of the device, if it is known."""
+        if (conn := self.attr_device_info.get("connections", None)) is not None:
+            for connection_type, mac_address in conn:
+                if connection_type == dr.CONNECTION_NETWORK_MAC:
+                    return mac_address
+        return None
+
+    async def macDiscover(self) -> None:
+        """Look the network MAC address up and make sure the device registry has it.
+
+        Retried every cycle until the registry accepted it: on a cold start the address is
+        only known once the device has answered, and a MAC still held by another device
+        (see macSet) starts working the moment that device is removed.
+        """
+        if self.macRegistered or not self.ipAddress:
+            return
+
+        if (mac := self.netMac) is None:
+            if self.lastseen == datetime.min:
+                return
+            if (mac := await self.hass.async_add_executor_job(macLookup, self.ipAddress)) is None:
+                return
+
+        self.macSet(mac)
+
+    def macSet(self, mac: str) -> None:
+        """Publish the network MAC address of the device.
+
+        Home Assistant merges devices of different integrations that share a connection, so
+        this is what puts the entities the router integration (FRITZ!Box Tools, UniFi, ...)
+        creates for the same hardware onto this device.
+        """
+        connection = (dr.CONNECTION_NETWORK_MAC, dr.format_mac(mac))
+        if not CONST_MACADDRESS.match(connection[1]) or connection[1] == "00:00:00:00:00:00":
+            _LOGGER.warning("Ignoring invalid MAC address %s for %s", mac, self.name)
+            return
+
+        conn = {c for c in self.attr_device_info.get("connections", set()) if c[0] != dr.CONNECTION_NETWORK_MAC}
+        self.attr_device_info["connections"] = conn | {connection}
+
+        # The entities handed their device info to Home Assistant when they were added, so the
+        # registry has to be told separately; from the next start it comes back from there.
+        registry = dr.async_get(self.hass)
+        if (entry := registry.async_get_device(identifiers={(DOMAIN, self.deviceId), (DOMAIN, self.sn)})) is None:
+            return
+
+        if connection in entry.connections:
+            self.macRegistered = True
+            return
+
+        # A corrected address has to replace the old one, merging would keep both
+        stale = {c for c in entry.connections if c[0] == dr.CONNECTION_NETWORK_MAC}
+        try:
+            if stale:
+                registry.async_update_device(entry.id, new_connections=(entry.connections - stale) | {connection})
+            else:
+                registry.async_update_device(entry.id, merge_connections={connection})
+            self.macRegistered = True
+            _LOGGER.info("Network MAC address of %s is %s", self.name, connection[1])
+        except HomeAssistantError:
+            # Home Assistant only ever merges devices while creating them, so as long as another
+            # device holds the MAC both stay separate. Removing that one is enough: the entities
+            # of a router integration carry no identifiers of their own and are recreated on the
+            # device owning their MAC, which is this one from then on.
+            if not self.macReported:
+                self.macReported = True
+                other = registry.async_get_device(connections={connection})
+                _LOGGER.warning(
+                    "Cannot add MAC address %s to %s, the device %s already uses it. Delete that device in "
+                    "Home Assistant to merge both; no restart or reconfiguration is needed.",
+                    connection[1],
+                    self.name,
+                    (other.name_by_user or other.name) if other else "?",
+                )
 
     @staticmethod
     def _scanner_source(scanner_device: Any) -> str | None:

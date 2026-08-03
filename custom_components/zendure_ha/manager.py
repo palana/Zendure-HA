@@ -301,6 +301,8 @@ class ZendureManager(DataUpdateCoordinator[None], EntityDevice):
 
             _LOGGER.debug("Update device: %s (%s)", device.name, device.deviceId)
             await device.dataRefresh(self.update_count)
+            # After dataRefresh: on a cold start that is what makes the device answer for the first time
+            await device.macDiscover()
             if device.hemsState.is_on and (time - device.hemsStateUpdated).total_seconds() > SmartMode.HEMSOFF_TIMEOUT:
                 device.hemsState.update_value(0)
             device.setStatus()
