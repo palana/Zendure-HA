@@ -46,12 +46,12 @@ jobs:
           cd "${{ github.workspace }}/custom_components/${{ steps.information.outputs.name }}"
           zip ${{ steps.information.outputs.name }}.zip -r ./
 
+      # HACS installs this asset (hacs.json: zip_release + filename) and extracts it
+      # straight into custom_components/zendure_ha/, so losing it means no install.
       - name: 📤 Upload the zip file as a release asset
-        uses: actions/upload-release-asset@v1
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        with:
-          upload_url: ${{ github.event.release.upload_url }}
-          asset_path: "${{ github.workspace }}/custom_components/${{ steps.information.outputs.name }}/${{ steps.information.outputs.name }}.zip"
-          asset_name: ${{ steps.information.outputs.name }}.zip
-          asset_content_type: application/zip
+        run: |
+          gh release upload "${{ github.event.release.tag_name }}" \
+            "${{ github.workspace }}/custom_components/${{ steps.information.outputs.name }}/${{ steps.information.outputs.name }}.zip" \
+            --clobber --repo "${{ github.repository }}"
