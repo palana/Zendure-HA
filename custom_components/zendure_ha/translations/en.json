@@ -506,6 +506,11 @@
       "fanmode": {
         "name": "Smart Fan"
       }
+    },
+    "text": {
+      "host_override": {
+        "name": "Local host/IP"
+      }
     }
   },
   "exceptions": {

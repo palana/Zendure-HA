@@ -33,6 +33,7 @@ from .entity import EntityDevice, EntityZendure
 from .number import ZendureNumber
 from .select import ZendureRestoreSelect, ZendureSelect
 from .sensor import ZendureRestoreSensor, ZendureSensor
+from .text import ZendureRestoreText
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -761,6 +762,13 @@ class ZendureZenSdk(ZendureDevice):
         super().__init__(hass, deviceId, name, model, definition, parent)
         self.connection = ZendureRestoreSelect(self, "connection", {0: "cloud", 2: "zenSDK"}, self.mqttSelect, 0)
         self.httpid = 0
+        self.discoveredAddress = self.ipAddress
+        self.hostOverride = ZendureRestoreText(self, "hostOverride", self.hostSelect)
+
+    async def hostSelect(self, _entity: Any, value: str) -> None:
+        """Use a user supplied host/IP, or fall back to the discovered one when cleared."""
+        self.ipAddress = value.strip() or self.discoveredAddress
+        _LOGGER.info("Local address for %s is %s", self.name, self.ipAddress)
 
     @property
     def usesCloud(self) -> bool:

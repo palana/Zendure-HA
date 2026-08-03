@@ -456,6 +456,11 @@
       "fanmode": {
         "name": "Ventilateur intelligent"
       }
+    },
+    "text": {
+      "host_override": {
+        "name": "Hôte/IP local"
+      }
     }
   },
   "exceptions": {
