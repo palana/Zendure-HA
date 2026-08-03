@@ -134,6 +134,8 @@ class ZendureDevice(EntityDevice):
         self.discharge_limit: int = 0
         self.discharge_optimal: int = 0
         self.discharge_start: int = 0
+        self.rated_charge: int = 0
+        self.rated_discharge: int = 0
         self.maxSolar = 0
         self.pwr_max: int = 0
         self.pwr_produced: int = 0
@@ -185,6 +187,36 @@ class ZendureDevice(EntityDevice):
         self.aggrSwitchCount = ZendureRestoreSensor(self, "switchCount", None, None, None, "total_increasing", 0)
 
     def setLimits(self, charge: int, discharge: int) -> None:
+        """Set the model's rated limits; called once per device from its constructor."""
+        self.rated_charge = charge
+        self.rated_discharge = discharge
+        self.applyLimits(charge, discharge)
+
+    def setReportedLimits(self, charge: int | None = None, discharge: int | None = None) -> None:
+        """Apply a limit the device reported about itself.
+
+        Devices intermittently report inverseMaxPower/chargeMaxLimit as 0 - observed on a
+        SolarFlow 800 Pro in zenSDK mode while charging from PV (inverse_max_power=0,
+        charge_max_limit=0). Taking that at face value collapses charge_limit/discharge_limit
+        to 0, which clamps every outgoing write to 0 in ZendureNumber.async_set_native_value
+        and leaves the manager unable to command the device at all.
+
+        A reported limit may only narrow the model's rating, never zero it out or exceed it.
+        """
+        if charge is not None and charge != 0 and self.rated_charge != 0:
+            # both values are negative; max() keeps the smaller magnitude
+            charge = max(charge, self.rated_charge)
+        else:
+            charge = self.charge_limit
+
+        if discharge is not None and discharge != 0 and self.rated_discharge != 0:
+            discharge = min(discharge, self.rated_discharge)
+        else:
+            discharge = self.discharge_limit
+
+        self.applyLimits(charge, discharge)
+
+    def applyLimits(self, charge: int, discharge: int) -> None:
         """Set the device limits."""
         try:
             self.charge_limit = charge
@@ -253,9 +285,9 @@ class ZendureDevice(EntityDevice):
                     case "gridOffPower":
                         self.aggrOffGrid.aggregate(dt_util.now(), value)
                     case "inverseMaxPower":
-                        self.setLimits(self.charge_limit, value)
+                        self.setReportedLimits(discharge=value)
                     case "chargeLimit" | "chargeMaxLimit":
-                        self.setLimits(-value, self.discharge_limit)
+                        self.setReportedLimits(charge=-value)
                     case "hemsState" | "socStatus":
                         self.setStatus()
                         if key == "socStatus" and self.socStatus.asInt == 0:
