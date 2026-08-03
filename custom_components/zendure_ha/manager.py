@@ -277,7 +277,9 @@ class ZendureManager(DataUpdateCoordinator[None], EntityDevice):
                     sn = d.decode("utf8")[:-1]
                     if device.snNumber.endswith(sn):
                         _LOGGER.info("Found Zendure Bluetooth device: %s", si)
-                        device.attr_device_info["connections"] = {("bluetooth", str(si.address))}
+                        # Merge, never replace: other connection types live in the same set.
+                        conn = device.attr_device_info.get("connections", set())
+                        device.attr_device_info["connections"] = conn | {("bluetooth", str(si.address))}
                         return True
                 except Exception:  # noqa: S112
                     continue
