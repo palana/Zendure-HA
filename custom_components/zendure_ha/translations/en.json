@@ -514,6 +514,9 @@
     "text": {
       "host_override": {
         "name": "Local host/IP"
+      },
+      "mac_override": {
+        "name": "Network MAC address"
       }
     }
   },

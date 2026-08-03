@@ -464,6 +464,9 @@
     "text": {
       "host_override": {
         "name": "Hôte/IP local"
+      },
+      "mac_override": {
+        "name": "Adresse MAC réseau"
       }
     }
   },

@@ -503,6 +503,9 @@
     "text": {
       "host_override": {
         "name": "Lokale Host-Adresse/IP"
+      },
+      "mac_override": {
+        "name": "Netzwerk-MAC-Adresse"
       }
     }
   },

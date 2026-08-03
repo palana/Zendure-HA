@@ -399,6 +399,9 @@
     "text": {
       "host_override": {
         "name": "Lokaal host/IP"
+      },
+      "mac_override": {
+        "name": "Netwerk-MAC-adres"
       }
     }
   },

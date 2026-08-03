@@ -202,6 +202,8 @@ class ZendureDevice(EntityDevice):
         self.availableKwh = ZendureSensor(self, "available_kwh", None, "kWh", "energy_storage", None, 1)
         self.totalKwh = ZendureSensor(self, "total_kwh", None, "kWh", "energy_storage", "measurement", 2)
         self.connectionStatus = ZendureSensor(self, "connectionStatus")
+        # Only needed when the lookup cannot reach the device (Home Assistant on another subnet/VLAN)
+        self.macOverride = ZendureRestoreText(self, "macOverride", self.macOverrideSet)
         self.connection: ZendureRestoreSelect
         self.bleAdapter: ZendureRestoreSelect | None = None
         self.remainingTime = ZendureSensor(self, "remainingTime", None, "h", "duration", "measurement")
@@ -508,6 +510,11 @@ class ZendureDevice(EntityDevice):
                 return
 
         self.macSet(mac)
+
+    async def macOverrideSet(self, _entity: Any, value: str) -> None:
+        """Use a user supplied MAC address, for setups where the lookup cannot work."""
+        if mac := value.strip():
+            self.macSet(mac)
 
     def macSet(self, mac: str) -> None:
         """Publish the network MAC address of the device.
