@@ -804,7 +804,11 @@ class ZendureZenSdk(ZendureDevice):
             await self.httpPost("properties/write", {"properties": {entity.propertyName: value}})
 
     async def dataRefresh(self, update_count: int) -> None:
-        if update_count == 0 and not self.online:
+        # On zenSDK the local HTTP API is the only data source, so it has to be polled
+        # every cycle. Previously the only recurring local read happened in power_get(),
+        # which runs off P1 meter state changes - with no (or a stale) P1 meter the
+        # entities were kept alive purely by the cloud MQTT stream.
+        if self.connection.value != 0 or (update_count == 0 and not self.online):
             json = await self.httpGet("properties/report")
             await self.mqttProperties(json)
 
