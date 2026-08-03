@@ -52,6 +52,7 @@ _LOGGER = logging.getLogger(__name__)
 
 ZENDURE_MANAGER_STORAGE_VERSION = 1
 ZENDURE_DEVICES = "devices"
+ZENDURE_CLOUD = "cloud_required"
 
 
 class ApiError(Exception):
@@ -147,6 +148,21 @@ class Api:
     @staticmethod
     async def Connect(hass: HomeAssistant, data: dict[str, Any], reload: bool) -> dict[str, Any] | None:
         """Connect to the Zendure API."""
+        store = Store(hass, ZENDURE_MANAGER_STORAGE_VERSION, f"{DOMAIN}.storage") if reload else None
+        storage = await store.async_load() if store is not None else None
+        if not isinstance(storage, dict):
+            storage = None
+
+        # A setup where every device runs on the local zenSDK transport needs nothing from
+        # the cloud: the device list, keys and IPs are all in storage. Skip the call so
+        # startup neither depends on nor waits for the Zendure API.
+        # Note this also means a device newly added in the Zendure app is not picked up;
+        # the config flow always queries the API (it passes reload=False), so Reconfigure
+        # is the way to refresh the list.
+        if storage is not None and storage.get(ZENDURE_DEVICES) and not storage.get(ZENDURE_CLOUD, True):
+            _LOGGER.info("All devices are local, skipping the Zendure API device lookup")
+            return dict(storage[ZENDURE_DEVICES])
+
         try:
             devices = await Api.ApiHA(hass, data)
         except ApiError:
@@ -159,17 +175,28 @@ class Api:
             devices = None
 
         # Open the storage
-        if reload:
-            store = Store(hass, ZENDURE_MANAGER_STORAGE_VERSION, f"{DOMAIN}.storage")
+        if store is not None:
             if devices is None or len(devices) == 0:
                 # load configuration from storage
-                if (storage := await store.async_load()) and isinstance(storage, dict):
+                if storage is not None:
                     devices = storage.get(ZENDURE_DEVICES, {})
             else:
-                # Save configuration to storage
-                await store.async_save({ZENDURE_DEVICES: devices})
+                # Save configuration to storage, keeping the known cloud requirement
+                await store.async_save({ZENDURE_DEVICES: devices, ZENDURE_CLOUD: storage.get(ZENDURE_CLOUD, True) if storage else True})
 
         return devices
+
+    @staticmethod
+    async def SaveCloudUsage(hass: HomeAssistant) -> None:
+        """Record whether any device still needs the cloud, for the next startup."""
+        needed = any(d.usesCloud for d in Api.devices.values())
+        store = Store(hass, ZENDURE_MANAGER_STORAGE_VERSION, f"{DOMAIN}.storage")
+        storage = await store.async_load()
+        if not isinstance(storage, dict) or not storage.get(ZENDURE_DEVICES):
+            return
+        if storage.get(ZENDURE_CLOUD, True) != needed:
+            storage[ZENDURE_CLOUD] = needed
+            await store.async_save(storage)
 
     @staticmethod
     async def ApiHA(hass: HomeAssistant, data: dict[str, Any]) -> dict[str, Any] | None:

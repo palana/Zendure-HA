@@ -286,6 +286,7 @@ class ZendureManager(DataUpdateCoordinator[None], EntityDevice):
         # Re-evaluated every cycle: the devices' connection modes are restored
         # asynchronously, and the user can switch a device over at any time.
         await self.api.ensureCloud(self.hass)
+        await Api.SaveCloudUsage(self.hass)
 
         time = datetime.now()
         kwh = 0
