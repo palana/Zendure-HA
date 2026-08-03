@@ -55,7 +55,8 @@
         "data": {
           "p1meter": "P1 Sensor for smart matching",
           "mqttlog": "Log MQTT communication",
-          "auto_mqtt_user": "Automatically manage MQTT users"
+          "auto_mqtt_user": "Automatically manage MQTT users",
+          "localonly": "Local only (never connect to the Zendure cloud)"
         },
         "description": "Amend your options.",
         "title": "Zendure Integration Options"

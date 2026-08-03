@@ -22,6 +22,7 @@ from paho.mqtt import enums as mqtt_enums
 from .const import (
     CONF_APPTOKEN,
     CONF_HAKEY,
+    CONF_LOCALONLY,
     CONF_MQTTLOG,
     CONF_MQTTPORT,
     CONF_MQTTPSW,
@@ -103,11 +104,13 @@ class Api:
     wifissid: str = ""
     cloudUser: str = ""
     cloudPassword: str = ""
+    localOnly: bool = False
     instance: Api | None = None
 
     async def Init(self, hass: HomeAssistant, data: Mapping[str, Any], mqtt: Mapping[str, Any]) -> None:
         """Initialize Zendure Api."""
         Api.instance = self
+        Api.localOnly = data.get(CONF_LOCALONLY, False)
         Api.mqttLogging = data.get(CONF_MQTTLOG, False)
         Api.mqttCloud.__init__(mqtt_enums.CallbackAPIVersion.VERSION2, mqtt["clientId"], False, "cloud", mqtt_enums.MQTTProtocolVersion.MQTTv31)
         url = mqtt["url"]
@@ -133,7 +136,10 @@ class Api:
 
     async def ensureCloud(self, hass: HomeAssistant) -> None:
         """Connect to the cloud broker only while at least one device actually needs it."""
-        needed = any(d.usesCloud for d in Api.devices.values())
+        # localOnly is an unconditional promise: never open a session to Zendure, whatever
+        # the devices' connection modes say. It also closes the window at startup during
+        # which the restored connection modes are not known yet and default to "cloud".
+        needed = not Api.localOnly and any(d.usesCloud for d in Api.devices.values())
 
         if needed and not Api.mqttCloud.is_connected():
             if Api.cloudServer == "":
@@ -159,7 +165,7 @@ class Api:
         # Note this also means a device newly added in the Zendure app is not picked up;
         # the config flow always queries the API (it passes reload=False), so Reconfigure
         # is the way to refresh the list.
-        if storage is not None and storage.get(ZENDURE_DEVICES) and not storage.get(ZENDURE_CLOUD, True):
+        if storage is not None and storage.get(ZENDURE_DEVICES) and (data.get(CONF_LOCALONLY, False) or not storage.get(ZENDURE_CLOUD, True)):
             _LOGGER.info("All devices are local, skipping the Zendure API device lookup")
             return dict(storage[ZENDURE_DEVICES])
 

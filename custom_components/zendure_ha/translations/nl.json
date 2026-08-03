@@ -56,7 +56,8 @@
       "init": {
         "data": {
           "scan_interval": "Scaninterval (seconden)",
-          "auto_mqtt_user": "MQTT-gebruikers automatisch beheren"
+          "auto_mqtt_user": "MQTT-gebruikers automatisch beheren",
+          "localonly": "Alleen lokaal (nooit verbinden met de Zendure-cloud)"
         },
         "description": "Pas je opties aan.",
         "title": "Zendure Integratie Opties"
