@@ -30,7 +30,7 @@ from .binary_sensor import ZendureBinarySensor
 from .button import ZendureButton
 from .const import DeviceState, SmartMode
 from .entity import EntityDevice, EntityZendure
-from .number import ZendureNumber
+from .number import ZendureNumber, ZendureRestoreNumber
 from .select import ZendureRestoreSelect, ZendureSelect
 from .sensor import ZendureRestoreSensor, ZendureSensor
 from .text import ZendureRestoreText
@@ -764,6 +764,43 @@ class ZendureZenSdk(ZendureDevice):
         self.httpid = 0
         self.discoveredAddress = self.ipAddress
         self.hostOverride = ZendureRestoreText(self, "hostOverride", self.hostSelect)
+        # inverseMaxPower is the device's regulatory export cap (800 W in Germany). It is a
+        # per-country value the integration must never derive on its own, so this is a plain
+        # user setting: 0 means "leave the device alone", anything else is re-asserted when
+        # the device disagrees. The device-reported value stays visible as its own sensor.
+        self.inverseLimit = ZendureRestoreNumber(self, "inverseLimit", self.inverseWrite, None, "W", "power", 3600, 0, NumberMode.BOX, True)
+
+    @property
+    def inverseReported(self) -> int | None:
+        """The regulatory cap the device last reported, or None if it never has."""
+        entity = self.entities.get("inverseMaxPower")
+        return entity.asInt if entity is not None and hasattr(entity, "asInt") else None
+
+    async def inverseWrite(self, _entity: Any, value: Any) -> None:
+        """Push a user-set regulatory cap, but only once the device's value is known.
+
+        Skipping the write while inverseReported is None keeps the restore on every HA start
+        from re-writing a value the device already holds; assertInverseLimit() picks it up
+        after the first report instead.
+        """
+        if (wanted := int(value)) > 0 and (reported := self.inverseReported) is not None and reported != wanted:
+            _LOGGER.info("Setting regulatory output limit of %s to %s W", self.name, wanted)
+            await self.httpPost("properties/write", {"properties": {"inverseMaxPower": wanted}})
+
+    async def assertInverseLimit(self) -> None:
+        """Restore the user's regulatory cap if something reset it on the device."""
+        reported = self.inverseReported
+        if reported == 0 and self.inverseLimit.asInt <= 0:
+            _LOGGER.warning(
+                "%s reports a regulatory output limit of 0 W and cannot export anything. "
+                "Set its 'regulatory output limit' number to the limit for your country (800 W in Germany).",
+                self.name,
+            )
+            return
+
+        if (wanted := self.inverseLimit.asInt) > 0 and reported is not None and reported != wanted:
+            _LOGGER.warning("%s regulatory output limit is %s W, restoring %s W", self.name, reported, wanted)
+            await self.httpPost("properties/write", {"properties": {"inverseMaxPower": wanted}})
 
     async def hostSelect(self, _entity: Any, value: str) -> None:
         """Use a user supplied host/IP, or fall back to the discovered one when cleared."""
@@ -819,6 +856,7 @@ class ZendureZenSdk(ZendureDevice):
         if self.connection.value != 0 or (update_count == 0 and not self.online):
             json = await self.httpGet("properties/report")
             await self.mqttProperties(json)
+            await self.assertInverseLimit()
 
     async def power_get(self) -> bool:
         """Get the current power."""

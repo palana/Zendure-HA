@@ -113,6 +113,9 @@
       },
       "soc_set": {
         "name": "Target SoC"
+      },
+      "inverse_limit": {
+        "name": "Regulatory output limit (0 = leave device setting alone)"
       }
     },
     "sensor": {

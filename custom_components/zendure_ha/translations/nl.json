@@ -99,6 +99,9 @@
       },
       "soc_set": {
         "name": "SOC Maximaal"
+      },
+      "inverse_limit": {
+        "name": "Wettelijke uitgangslimiet (0 = apparaatinstelling ongemoeid laten)"
       }
     },
     "sensor": {

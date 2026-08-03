@@ -102,6 +102,9 @@
       },
       "soc_set": {
         "name": "SoC-Zielwert"
+      },
+      "inverse_limit": {
+        "name": "Behördliche Ausgangsleistungsgrenze (0 = Geräteeinstellung nicht ändern)"
       }
     },
     "sensor": {

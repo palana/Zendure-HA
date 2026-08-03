@@ -103,6 +103,9 @@
       },
       "soc_set": {
         "name": "SOC maximum"
+      },
+      "inverse_limit": {
+        "name": "Limite de puissance réglementaire (0 = ne pas modifier le réglage de l'appareil)"
       }
     },
     "sensor": {
