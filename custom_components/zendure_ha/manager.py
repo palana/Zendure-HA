@@ -161,7 +161,7 @@ class ZendureManager(DataUpdateCoordinator[None], EntityDevice):
         _LOGGER.info("Loaded %s devices", len(self.devices))
 
         # initialize the api & p1 meter
-        self.api.Init(self.config_entry.data, mqtt)
+        await self.api.Init(self.hass, self.config_entry.data, mqtt)
         await self.update_fusegroups()
         self.update_p1meter(self.config_entry.data.get(CONF_P1METER, "sensor.power_actual"))
         await asyncio.sleep(1)  # allow other tasks to run
@@ -282,6 +282,10 @@ class ZendureManager(DataUpdateCoordinator[None], EntityDevice):
                 except Exception:  # noqa: S112
                     continue
             return False
+
+        # Re-evaluated every cycle: the devices' connection modes are restored
+        # asynchronously, and the user can switch a device over at any time.
+        await self.api.ensureCloud(self.hass)
 
         time = datetime.now()
         kwh = 0

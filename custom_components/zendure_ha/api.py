@@ -100,14 +100,21 @@ class Api:
     localPassword: str = ""
     wifipsw: str = ""
     wifissid: str = ""
+    cloudUser: str = ""
+    cloudPassword: str = ""
+    instance: Api | None = None
 
-    def Init(self, data: Mapping[str, Any], mqtt: Mapping[str, Any]) -> None:
+    async def Init(self, hass: HomeAssistant, data: Mapping[str, Any], mqtt: Mapping[str, Any]) -> None:
         """Initialize Zendure Api."""
+        Api.instance = self
         Api.mqttLogging = data.get(CONF_MQTTLOG, False)
         Api.mqttCloud.__init__(mqtt_enums.CallbackAPIVersion.VERSION2, mqtt["clientId"], False, "cloud", mqtt_enums.MQTTProtocolVersion.MQTTv31)
         url = mqtt["url"]
         Api.cloudServer, Api.cloudPort = url.rsplit(":", 1) if ":" in url else (url, "1883")
-        self.mqttInit(Api.mqttCloud, Api.cloudServer, Api.cloudPort, mqtt["username"], mqtt["password"])
+        Api.cloudUser = mqtt["username"]
+        Api.cloudPassword = mqtt["password"]
+        # The cloud broker is connected lazily by ensureCloud() once the devices' restored
+        # connection modes are known, so a local-only setup never talks to it at all.
 
         # Get wifi settings
         Api.wifissid = data.get(CONF_WIFISSID, "")
@@ -121,7 +128,21 @@ class Api:
         if Api.localServer != "":
             clientId = Api.localUser + str(secrets.randbelow(10000))
             self.mqttLocal.__init__(mqtt_enums.CallbackAPIVersion.VERSION2, clientId, True, "local", mqtt_enums.MQTTProtocolVersion.MQTTv31)
-            self.mqttInit(self.mqttLocal, Api.localServer, Api.localPort, Api.localUser, Api.localPassword)
+            await hass.async_add_executor_job(self.mqttInit, self.mqttLocal, Api.localServer, Api.localPort, Api.localUser, Api.localPassword)
+
+    async def ensureCloud(self, hass: HomeAssistant) -> None:
+        """Connect to the cloud broker only while at least one device actually needs it."""
+        needed = any(d.usesCloud for d in Api.devices.values())
+
+        if needed and not Api.mqttCloud.is_connected():
+            if Api.cloudServer == "":
+                return
+            _LOGGER.info("Connecting to the Zendure cloud broker")
+            await hass.async_add_executor_job(self.mqttInit, Api.mqttCloud, Api.cloudServer, Api.cloudPort, Api.cloudUser, Api.cloudPassword)
+        elif not needed and Api.mqttCloud.is_connected():
+            _LOGGER.info("No device uses the cloud, disconnecting from the Zendure cloud broker")
+            await hass.async_add_executor_job(Api.mqttCloud.disconnect)
+            await hass.async_add_executor_job(Api.mqttCloud.loop_stop)
 
     @staticmethod
     async def Connect(hass: HomeAssistant, data: dict[str, Any], reload: bool) -> dict[str, Any] | None:

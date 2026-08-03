@@ -773,6 +773,8 @@ class ZendureZenSdk(ZendureDevice):
         self.mqtt = None
         match select.value:
             case 0:
+                if Api.instance is not None:
+                    await Api.instance.ensureCloud(self.hass)
                 Api.mqttCloud.subscribe(f"/{self.prodkey}/{self.deviceId}/#")
                 Api.mqttCloud.subscribe(f"iot/{self.prodkey}/{self.deviceId}/#")
 
