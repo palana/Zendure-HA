@@ -243,6 +243,11 @@ class Api:
                     Api.mqttCloud.unsubscribe(f"iot/{device.prodkey}/{device.deviceId}/#")
         else:
             for device in self.devices.values():
+                # A device on the local-only zenSDK transport must not be fed from the
+                # cloud broker. Without this check every reconnect re-subscribed it and
+                # undid the unsubscribe done by ZendureZenSdk.mqttSelect.
+                if client == Api.mqttCloud and not device.usesCloud:
+                    continue
                 client.subscribe(f"/{device.prodkey}/{device.deviceId}/#")
                 client.subscribe(f"iot/{device.prodkey}/{device.deviceId}/#")
 
@@ -263,6 +268,11 @@ class Api:
             deviceId = topics[2]
 
             if (device := self.devices.get(deviceId, None)) is not None:
+                # Retained or in-flight messages can still arrive right after a device is
+                # switched to zenSDK; never let cloud data drive a local-only device.
+                if not device.usesCloud:
+                    return
+
                 try:
                     payload = json.loads(msg.payload.decode())
                 except json.JSONDecodeError as err:

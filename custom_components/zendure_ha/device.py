@@ -701,6 +701,11 @@ class ZendureDevice(EntityDevice):
         return self.connectionStatus.asInt >= SmartMode.CONNECTED
 
     @property
+    def usesCloud(self) -> bool:
+        """Whether this device needs the Zendure cloud MQTT broker."""
+        return True
+
+    @property
     def pwr_offgrid(self) -> int:
         """Get the offgrid power."""
         return 0
@@ -757,16 +762,21 @@ class ZendureZenSdk(ZendureDevice):
         self.connection = ZendureRestoreSelect(self, "connection", {0: "cloud", 2: "zenSDK"}, self.mqttSelect, 0)
         self.httpid = 0
 
+    @property
+    def usesCloud(self) -> bool:
+        """zenSDK devices are driven entirely over the local HTTP API."""
+        return self.connection.value != SmartMode.ZENSDK
+
     async def mqttSelect(self, select: Any, _value: Any) -> None:
         from .api import Api
 
         self.mqtt = None
         match select.value:
             case 0:
-                Api.mqttCloud.unsubscribe(f"/{self.prodkey}/{self.deviceId}/#")
-                Api.mqttCloud.unsubscribe(f"iot/{self.prodkey}/{self.deviceId}/#")
+                Api.mqttCloud.subscribe(f"/{self.prodkey}/{self.deviceId}/#")
+                Api.mqttCloud.subscribe(f"iot/{self.prodkey}/{self.deviceId}/#")
 
-            case 2:
+            case SmartMode.ZENSDK:
                 Api.mqttCloud.unsubscribe(f"/{self.prodkey}/{self.deviceId}/#")
                 Api.mqttCloud.unsubscribe(f"iot/{self.prodkey}/{self.deviceId}/#")
 
