@@ -22,11 +22,12 @@ def _stub_add_entities_callback(monkeypatch: pytest.MonkeyPatch) -> None:
     from custom_components.zendure_ha.select import ZendureSelect
     from custom_components.zendure_ha.sensor import ZendureSensor
     from custom_components.zendure_ha.switch import ZendureSwitch
+    from custom_components.zendure_ha.text import ZendureText
 
     def _noop(_entities: list[Any]) -> None:
         return
 
-    for cls in (ZendureBinarySensor, ZendureButton, ZendureNumber, ZendureSelect, ZendureSensor, ZendureSwitch):
+    for cls in (ZendureBinarySensor, ZendureButton, ZendureNumber, ZendureSelect, ZendureSensor, ZendureSwitch, ZendureText):
         monkeypatch.setattr(cls, "add", staticmethod(_noop), raising=False)
 
 
